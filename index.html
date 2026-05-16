@@ -901,11 +901,11 @@ function doLogin(){
     setTimeout(()=>{
       document.getElementById('lockScreen').style.display='none';
       document.getElementById('app').classList.add('on');
-      // Landing page: Live Orders
-      document.getElementById('tb-status-wrap').style.display='none';
-      document.getElementById('tbCount').textContent='Loading orders…';
-      loadOrders();
       loadData(); // load menu in background for other pages
+      // Landing page: navigate to the first visible sidebar item
+      const firstVisible = SB_ITEMS.find(i => sbVis[i.id] !== false);
+      const landingId = firstVisible ? firstVisible.id.replace('nav-','') : 'orders';
+      nav(landingId, document.getElementById('nav-'+landingId));
     },560);
   } else { document.getElementById('lErr').classList.add('show'); }
 }
@@ -1780,6 +1780,17 @@ function toggleSbItem(id, visible){
   localStorage.setItem(SB_VIS_KEY, JSON.stringify(sbVis));
   applySbVis();
   toast((visible?'Showing':'Hiding')+' sidebar item','');
+  // If we just hid the currently active page, navigate to the next visible one
+  if(!visible){
+    const activePageId = document.querySelector('.page.on')?.id?.replace('page-','');
+    if(activePageId && id === 'nav-'+activePageId){
+      const nextVisible = SB_ITEMS.find(i => i.id !== id && sbVis[i.id] !== false);
+      if(nextVisible){
+        const nextId = nextVisible.id.replace('nav-','');
+        nav(nextId, document.getElementById(nextVisible.id));
+      }
+    }
+  }
 }
 
 function sbVisAll(show){
@@ -1788,6 +1799,13 @@ function sbVisAll(show){
   buildSbVisToggles();
   applySbVis();
   toast(show?'All sidebar items shown':'All sidebar items hidden','');
+  // If hiding all, nothing to navigate to — stay on visibility page (always accessible)
+  if(!show){
+    const activePageId = document.querySelector('.page.on')?.id?.replace('page-','');
+    if(activePageId && activePageId !== 'visibility'){
+      nav('visibility', document.getElementById('nav-visibility'));
+    }
+  }
 }
 
 function sbVisReset(){
