@@ -748,9 +748,29 @@ pre{background:var(--surface2);border:1px solid var(--border2);border-radius:6px
     <!-- ═══ VISIBILITY PAGE ═══ -->
     <div class="page" id="page-visibility">
       <div class="page-body">
+
+      <!-- VISIBILITY LOCK SCREEN -->
+      <div id="visLockCard" class="cfg-card">
+        <h3>🔐 Visibility Settings</h3>
+        <p>Enter the visibility password to access column and action settings.</p>
+        <div style="display:flex;gap:10px;align-items:flex-end;margin-top:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:180px">
+            <label class="flbl">Visibility Password</label>
+            <input class="fi" type="password" id="visLockPwd" placeholder="Enter password" onkeydown="if(event.key==='Enter') unlockVisibility()">
+          </div>
+          <button class="btn btn-gold" onclick="unlockVisibility()">Unlock →</button>
+        </div>
+        <div id="visLockErr" style="margin-top:10px;font-size:12px;color:var(--red);display:none">Incorrect password. Please try again.</div>
+      </div>
+
+      <!-- VISIBILITY CONTROLS (hidden until unlocked) -->
+      <div id="visContent" style="display:none">
       <div class="cfg-card">
-        <h3>Table Visibility</h3>
-        <p>Control which columns and actions appear in the Menu Items table. Changes apply instantly and persist across sessions.</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0">Table Visibility</h3>
+          <button class="btn btn-ghost btn-sm" onclick="lockVisibility()">🔒 Lock</button>
+        </div>
+        <p style="margin-bottom:16px">Control which columns and actions appear in the Menu Items table. Changes apply instantly and persist across sessions.</p>
 
         <div class="vis-section-lbl">Columns</div>
         <div id="colVisToggles" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
@@ -770,6 +790,22 @@ pre{background:var(--surface2);border:1px solid var(--border2);border-radius:6px
             </label>
           </div>
         </div>
+
+      </div>
+
+      <!-- SIDEBAR VISIBILITY -->
+      <div class="cfg-card" style="margin-top:18px">
+        <h3>Sidebar Menu Items</h3>
+        <p style="margin-bottom:16px">Show or hide navigation items in the sidebar. Changes apply instantly.</p>
+        <div id="sbVisToggles" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="sbVisAll(true)">Show All</button>
+          <button class="btn btn-ghost btn-sm" onclick="sbVisAll(false)">Hide All</button>
+          <button class="btn btn-ghost btn-sm" onclick="sbVisReset()">Reset Defaults</button>
+        </div>
+      </div>
+
+      </div>
 
       </div>
       </div>
@@ -827,8 +863,8 @@ function closeSidebar(){
 //  CONSTANTS
 // ══════════════════════════════════════════════
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZAMtm7XDpo7LmR3lzFoa4MvFBu1OM1rHf6qj_RJP2o3zhjGfIRsy1DCyWPnBDR2QE/exec';
-const DEFAULT_PWD = 'rukan2026';
-const KEY_PWD = 'rukan2026';
+const DEFAULT_PWD = 'rukan2024';
+const KEY_PWD = 'rukan2024';
 const C = { cat:0,name:1,desc:2,price:3,offer:4,caticon:5,img:6,tags:7,cat_ar:8,name_ar:9,desc_ar:10 };
 
 let rows = [];
@@ -898,7 +934,7 @@ function nav(id, btn){
   if(id==='reports'){ setReportDefaults(); loadReports(); }
   if(id==='receipt') loadRecentOrders();
   if(id==='config') { /* connection page, nothing extra */ }
-  if(id==='visibility') buildVisibilityPage();
+  if(id==='visibility'){ lockVisibility(); }
   closeSidebar();
 }
 
@@ -1387,13 +1423,117 @@ function openReceiptModal(orderId){
 }
 
 function printModalReceipt(){
-  const paper=document.getElementById('receiptPaperModal');
-  if(!paper){ toast('No receipt loaded','warn'); return; }
-  // Temporarily remap print target
-  const orig=document.getElementById('receiptPaperWrap');
-  paper.id='receiptPaper';
-  window.print();
-  paper.id='receiptPaperModal';
+  if(!currentReceiptOrder){ toast('No receipt loaded','warn'); return; }
+  printThermalReceipt(currentReceiptOrder);
+}
+
+function printReceipt(){
+  if(!currentReceiptOrder){ toast('No receipt loaded','warn'); return; }
+  printThermalReceipt(currentReceiptOrder);
+}
+
+function printThermalReceipt(order){
+  const win=window.open('','_blank','width=340,height=700,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
+  if(!win){ toast('Pop-up blocked — please allow pop-ups for this page','warn'); return; }
+
+  const now=new Date();
+  const printTime=now.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+' '+now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const statusLabels={completed:'** COMPLETED **',cancelled:'** CANCELLED **',dispatched:'** DISPATCHED **',pending:'** PENDING **'};
+
+  // Build item rows as a fixed-column text table
+  // Columns: Name(flex) | Qty(4ch) | Price(8ch)
+  const itemRows = order.items.map(it=>{
+    const name = String(it.name||'').substring(0,22); // truncate long names
+    const qty  = ('x'+it.qty).padStart(4);
+    const price= ('AED '+it.subtotal.toFixed(2)).padStart(10);
+    return `<tr><td class="td-name">${name}</td><td class="td-qty">${qty}</td><td class="td-price">${price}</td></tr>`;
+  }).join('');
+
+  const note = order.note ? `<div class="note">Note: ${String(order.note).replace(/</g,'&lt;')}</div>` : '';
+  const ordTime = order.timestamp ? `<div class="meta-row"><span>Ordered :</span><span>${fmtTime(order.timestamp)}</span></div>` : '';
+
+  win.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>Receipt</title>
+<style>
+  @page { size: 80mm auto; margin: 0mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 80mm;
+    background: #fff;
+    color: #000;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 4mm 4mm 10mm 4mm;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .center  { text-align: center; }
+  .bold    { font-weight: bold; }
+  .big     { font-size: 15px; font-weight: bold; }
+  .small   { font-size: 11px; }
+  .dashed  { border-top: 1px dashed #000; margin: 5px 0; }
+  .solid   { border-top: 2px solid #000; margin: 5px 0; }
+  .double  { border-top: 3px double #000; margin: 5px 0; }
+  .meta-row{ display: flex; justify-content: space-between; font-size: 11px; }
+  table    { width: 100%; border-collapse: collapse; }
+  .td-name { font-size: 12px; padding: 2px 0; word-break: break-word; }
+  .td-qty  { font-size: 12px; text-align: right; padding: 2px 4px; white-space: nowrap; width: 28px; }
+  .td-price{ font-size: 12px; text-align: right; padding: 2px 0; white-space: nowrap; width: 72px; }
+  .total-row{ display:flex; justify-content:space-between; font-size:15px; font-weight:bold; padding:3px 0; }
+  .status  { text-align:center; font-weight:bold; font-size:13px; margin:6px 0; letter-spacing:1px; }
+  .footer  { text-align:center; font-size:11px; margin-top:8px; }
+  .note    { font-size:11px; margin:5px 0; font-style:italic; }
+  .hdr-th  { font-size:10px; border-bottom:1px solid #000; padding-bottom:3px; }
+  @media screen {
+    body { box-shadow: 0 2px 12px rgba(0,0,0,.15); max-width:340px; margin:20px auto; padding:8mm; }
+  }
+</style>
+</head><body>
+
+  <div class="center big">Rukan Al Shawerma</div>
+  <div class="center small">Cafeteria - Ras Al Khaimah</div>
+  <div class="dashed"></div>
+
+  <div class="center small">Order No:</div>
+  <div class="center bold" style="font-size:14px;letter-spacing:1px">${esc(order.id)}</div>
+  <div class="dashed"></div>
+
+  <div class="meta-row"><span>Customer :</span><span>${esc(order.name||'Walk-in')}</span></div>
+  <div class="meta-row"><span>Printed  :</span><span>${printTime}</span></div>
+  ${ordTime}
+  <div class="dashed"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="hdr-th td-name" style="text-align:left">Item</th>
+        <th class="hdr-th td-qty">Qty</th>
+        <th class="hdr-th td-price">Sub</th>
+      </tr>
+    </thead>
+    <tbody>${itemRows}</tbody>
+  </table>
+
+  <div class="double"></div>
+  <div class="total-row"><span>TOTAL</span><span>AED ${order.total.toFixed(2)}</span></div>
+  <div class="solid"></div>
+
+  ${note}
+  <div class="status">${statusLabels[order.status]||order.status.toUpperCase()}</div>
+  <div class="dashed"></div>
+
+  <div class="footer">Thank you for your order!</div>
+  <div class="footer">Rukan Al Shawerma</div>
+
+</body></html>`);
+
+  win.document.close();
+  win.focus();
+  // Give browser time to render before printing
+  setTimeout(()=>{ win.print(); }, 500);
 }
 
 document.getElementById('receiptModal').addEventListener('click',e=>{ if(e.target===document.getElementById('receiptModal')) document.getElementById('receiptModal').classList.remove('on'); });
@@ -1590,6 +1730,99 @@ const COL_DEFS=[
   {key:'name_ar',label:'Item Name (AR)',tag:'Arabic'},
   {key:'desc_ar',label:'Description (AR)',tag:'Arabic'},
 ];
+
+const VIS_PWD = 'Effi@517';
+
+// ── Sidebar visibility ──────────────────────────────
+const SB_VIS_KEY = 'rukan_sb_vis';
+const SB_ITEMS = [
+  { id:'nav-orders',     label:'📋 Live Orders',   section:'Orders' },
+  { id:'nav-reports',    label:'📊 Reports',        section:'Orders' },
+  { id:'nav-receipt',    label:'🧾 Receipt Lookup', section:'Orders' },
+  { id:'nav-menu',       label:'🍽 Menu Items',      section:'Settings' },
+  { id:'nav-add',        label:'➕ Add Item',         section:'Settings' },
+  { id:'nav-config',     label:'🔌 Connection',       section:'Configuration' },
+  { id:'nav-visibility', label:'👁 Visibility',      section:'Configuration' },
+];
+const SB_VIS_DEFAULTS = Object.fromEntries(SB_ITEMS.map(i=>[i.id,true]));
+let sbVis = Object.assign({}, SB_VIS_DEFAULTS, JSON.parse(localStorage.getItem(SB_VIS_KEY)||'{}'));
+
+function applySbVis(){
+  SB_ITEMS.forEach(item=>{
+    const btn=document.getElementById(item.id);
+    if(btn) btn.style.display = sbVis[item.id]===false ? 'none' : '';
+  });
+}
+
+function buildSbVisToggles(){
+  const wrap=document.getElementById('sbVisToggles');
+  if(!wrap) return;
+  // Group by section
+  const sections={};
+  SB_ITEMS.forEach(item=>{
+    if(!sections[item.section]) sections[item.section]=[];
+    sections[item.section].push(item);
+  });
+  wrap.innerHTML=Object.entries(sections).map(([sec,items])=>`
+    <div class="vis-section-lbl" style="margin-top:10px">${sec}</div>
+    ${items.map(item=>`
+    <div class="col-toggle-row">
+      <span class="col-toggle-label">${item.label}</span>
+      <label class="toggle-sw">
+        <input type="checkbox" ${sbVis[item.id]!==false?'checked':''} onchange="toggleSbItem('${item.id}',this.checked)">
+        <span class="toggle-track"></span>
+      </label>
+    </div>`).join('')}`).join('');
+}
+
+function toggleSbItem(id, visible){
+  sbVis[id]=visible;
+  localStorage.setItem(SB_VIS_KEY, JSON.stringify(sbVis));
+  applySbVis();
+  toast((visible?'Showing':'Hiding')+' sidebar item','');
+}
+
+function sbVisAll(show){
+  SB_ITEMS.forEach(i=>sbVis[i.id]=show);
+  localStorage.setItem(SB_VIS_KEY, JSON.stringify(sbVis));
+  buildSbVisToggles();
+  applySbVis();
+  toast(show?'All sidebar items shown':'All sidebar items hidden','');
+}
+
+function sbVisReset(){
+  sbVis=Object.assign({},SB_VIS_DEFAULTS);
+  localStorage.setItem(SB_VIS_KEY, JSON.stringify(sbVis));
+  buildSbVisToggles();
+  applySbVis();
+  toast('Sidebar visibility reset to defaults','');
+}
+
+// Apply saved sidebar visibility on every load
+applySbVis();
+// ────────────────────────────────────────────────────
+
+function unlockVisibility(){
+  const val = document.getElementById('visLockPwd').value;
+  const err = document.getElementById('visLockErr');
+  if(val === VIS_PWD){
+    document.getElementById('visLockCard').style.display = 'none';
+    document.getElementById('visContent').style.display = '';
+    document.getElementById('visLockPwd').value = '';
+    err.style.display = 'none';
+    buildVisibilityPage();
+    buildSbVisToggles();
+  } else {
+    err.style.display = 'block';
+    setTimeout(()=>err.style.display='none', 2500);
+  }
+}
+
+function lockVisibility(){
+  document.getElementById('visLockCard').style.display = '';
+  document.getElementById('visContent').style.display = 'none';
+  document.getElementById('visLockPwd').value = '';
+}
 
 function buildVisibilityPage(){
   // Build column toggles
